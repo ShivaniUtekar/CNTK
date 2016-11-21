@@ -429,7 +429,7 @@ public:
         {
             auto message = String::Format("Input image has invalid size. Expected an image with Width * Height = {0}, but got Width = {1}, Height = {2}",
                 inputSize / numChannels, imageWidth, imageHeight);
-            throw gcnew ArgumentException(message);
+            throw gcnew ArgumentException(message, "image");
         }
         // Get the native bitmap structure that is underlying the Bitmap object:
         // Need to lock the whole image into memory.

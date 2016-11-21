@@ -8,7 +8,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Drawing;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+// Re-use the Resize method defined in the CSEvalClientTest.exe assembly. 
+// Strictly speaking, those extensions should live in an assembly of their own.
+using Microsoft.MSR.CNTK.Extensibility.Managed.CSEvalClient;
 
 namespace Microsoft.MSR.CNTK.Extensibility.Managed.Tests
 {
@@ -228,6 +232,72 @@ namespace Microsoft.MSR.CNTK.Extensibility.Managed.Tests
             var t = typeof(CNTKException);
             var instance = (CNTKException)domain.CreateInstanceFromAndUnwrap(path, t.FullName);
             Assert.AreNotEqual(null, instance);
+        }
+
+        [TestMethod]
+        public void EvalManagedImageApiErrorHandling()
+        {
+            // This example requires the RestNet_18 model.
+            // The model can be downloaded from <see cref="https://www.cntk.ai/resnet/ResNet_18.model"/>
+            // The model is assumed to be located at: <CNTK>\Examples\Image\Classification\ResNet 
+            // along with a sample image file named "zebra.jpg".
+            var resnetDirectory = Path.Combine(Environment.CurrentDirectory, @"..\..\Examples\Image\Classification\ResNet");
+            var resnetModelFilePath = Path.Combine(resnetDirectory, "ResNet_18.model");
+            var imageFileName = Path.Combine(resnetDirectory, "zebra.jpg");
+            int resNetImageSize = 224;
+            using (var model = new IEvaluateModelManagedF())
+            {
+                model.CreateNetwork(string.Format("modelPath=\"{0}\"", resnetModelFilePath), deviceId: -1);
+
+                // Prepare input value in the appropriate structure and size
+                var inDims = model.GetNodeDimensions(NodeGroup.Input);
+                if (inDims.First().Value != resNetImageSize * resNetImageSize * 3)
+                {
+                    throw new CNTKRuntimeException(string.Format("The input dimension for {0} is {1} which is not the expected size of {2}.", inDims.First(), inDims.First().Value, 224 * 224 * 3), string.Empty);
+                }
+                var outDims = model.GetNodeDimensions(NodeGroup.Output);
+                var outputNodeName = outDims.First().Key;
+
+                // Transform the image
+                var rawImage = new Bitmap(Bitmap.FromFile(imageFileName));
+                var bmp = rawImage.Resize(resNetImageSize, resNetImageSize, true);
+                bool exception1 = false;
+                try
+                {
+                    model.EvaluateRgbImage(bmp, "No such output key");
+                }
+                catch (ArgumentException ex)
+                {
+                    if (ex.ParamName == "outputKey" && ex.Message.Contains("not an output node"))
+                    {
+                        exception1 = true;
+                    }
+                }
+                catch { }
+                if (!exception1)
+                {
+                    throw new Exception("Providing a non-existing output node should fail with an ArgumentException.");
+                }
+                var wrongSize = bmp.Resize(100, 100, true);
+                bool exception2 = false;
+                try
+                {
+                    model.EvaluateRgbImage(wrongSize, outputNodeName);
+                }
+                catch (ArgumentException ex)
+                {
+                    if (ex.ParamName == "image" && ex.Message.Contains("invalid size"))
+                    {
+                        exception2 = true;
+                    }
+                }
+                catch { }
+                if (!exception2)
+                {
+                    throw new Exception("Calling with a wrongly sized image should fail with an ArgumentException.");
+                }
+            }
+
         }
     }
 }
